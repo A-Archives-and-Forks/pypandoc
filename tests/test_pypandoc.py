@@ -837,16 +837,12 @@ class TestPypandoc(unittest.TestCase):
 
     def test_conversion_from_multiple_files_with_brackets(self):
         """Multiple files with brackets in names should all convert correctly."""
-        with closed_tempfile(
-            ".md", text="first title", prefix="test [1] "
-        ) as file1:
+        with closed_tempfile(".md", text="first title", prefix="test [1] ") as file1:
             with closed_tempfile(
                 ".md", text="second title", prefix="test [2] "
             ) as file2:
                 expected = "<p>first title</p>\n<p>second title</p>"
-                received = pypandoc.convert_file(
-                    [Path(file1), Path(file2)], "html"
-                )
+                received = pypandoc.convert_file([Path(file1), Path(file2)], "html")
                 self.assertEqualExceptForNewlineEnd(expected, received)
 
     def assertEqualExceptForNewlineEnd(self, expected, received):  # noqa
