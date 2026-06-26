@@ -183,13 +183,24 @@ def convert_file(
             cworkdir=cworkdir,
         )
 
-    # convert the source file to a path object internally
+    # Track which inputs were originally Path objects (literal filenames)
+    # vs strings (which may contain intentional glob patterns like "*.md").
+    # Path objects must have glob special characters (*, ?, [) escaped to
+    # prevent misinterpretation — e.g. "file [2024].epub" would otherwise
+    # treat "[2024]" as a glob character class.
+    # See: https://github.com/JessicaTegner/pypandoc/issues/374
     if isinstance(source_file, str):
+        source_file_is_literal = False
         source_file = Path(source_file)
     elif isinstance(source_file, list):
+        source_file_is_literal = [isinstance(x, Path) for x in source_file]
         source_file = [Path(x) for x in source_file]
     elif isinstance(source_file, Iterator):
         source_file = [Path(x) for x in source_file]
+        source_file_is_literal = [True] * len(source_file)
+    else:
+        # Already a Path object
+        source_file_is_literal = True
 
     # we are basically interested to figure out if it's an absolute path or not.
     # if it's not, we want to prefix the working directory.
@@ -200,7 +211,7 @@ def convert_file(
         source_file = [x if x.is_absolute() else Path(cworkdir, x) for x in source_file]
     elif isinstance(source_file, Iterator):
         source_file = (x if x.is_absolute() else Path(cworkdir, x) for x in source_file)
-    # check ifjust a single path was given
+    # check if just a single path was given
     elif isinstance(source_file, Path):
         source_file = (
             source_file if source_file.is_absolute() else Path(cworkdir, source_file)
@@ -212,12 +223,18 @@ def convert_file(
     # remember that we already converted the source_file to a path object
     # so for glob.glob use both the dir and file name
     if isinstance(source_file, list):
-        for single_source in source_file:
-            discovered_source_files.extend(glob.glob(str(single_source)))
+        for idx, single_source in enumerate(source_file):
+            path_str = str(single_source)
+            if source_file_is_literal[idx]:
+                path_str = glob.escape(path_str)
+            discovered_source_files.extend(glob.glob(path_str))
         if discovered_source_files == []:
             discovered_source_files = source_file
     else:
-        discovered_source_files.extend(glob.glob(str(source_file)))
+        path_str = str(source_file)
+        if source_file_is_literal:
+            path_str = glob.escape(path_str)
+        discovered_source_files.extend(glob.glob(path_str))
         if discovered_source_files == []:
             discovered_source_files = [source_file]
 
@@ -443,8 +460,10 @@ def _convert_input(
     logger.debug("Identifying input type...")
     string_input = input_type == "string"
     if not string_input:
-        if isinstance(source, str):
-            input_file = [source]
+        if isinstance(source, (str, Path)):
+            input_file = [str(source)]
+        elif isinstance(source, list):
+            input_file = [str(x) for x in source]
         else:
             input_file = source
     else:

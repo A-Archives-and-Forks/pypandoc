@@ -803,6 +803,48 @@ class TestPypandoc(unittest.TestCase):
                 written = f.read()
             self.assertEqualExceptForNewlineEnd(expected, written)
 
+    def test_conversion_from_file_with_brackets_in_name(self):
+        """Filenames with brackets should not be interpreted as glob patterns.
+
+        Regression test for https://github.com/JessicaTegner/pypandoc/issues/374
+        Brackets like [2024] in filenames were treated as glob character classes,
+        causing 'PosixPath object is not iterable' TypeError.
+        """
+        with closed_tempfile(
+            ".md", text="# some title\n", prefix="test [2024] "
+        ) as file_name:
+            expected = "some title{0}=========={0}{0}".format(os.linesep)
+            # String input (preserves glob pattern support, but should still work
+            # when the file exists and glob resolves it)
+            received_str = pypandoc.convert_file(file_name, "rst")
+            self.assertEqualExceptForNewlineEnd(expected, received_str)
+            # Path input (must escape glob characters)
+            received_path = pypandoc.convert_file(Path(file_name), "rst")
+            self.assertEqualExceptForNewlineEnd(expected, received_path)
+
+    def test_conversion_from_file_with_glob_chars_in_name(self):
+        """Filenames with other glob special characters (*, ?) via Path input."""
+        # Only test characters that are valid in filenames on the current OS.
+        # On Windows, * and ? are invalid in filenames.
+        if sys.platform != "win32":
+            for char in ["*", "?"]:
+                with closed_tempfile(
+                    ".md", text="# title\n", prefix=f"test {char} file "
+                ) as file_name:
+                    expected = "title{0}====={0}{0}".format(os.linesep)
+                    received = pypandoc.convert_file(Path(file_name), "rst")
+                    self.assertEqualExceptForNewlineEnd(expected, received)
+
+    def test_conversion_from_multiple_files_with_brackets(self):
+        """Multiple files with brackets in names should all convert correctly."""
+        with closed_tempfile(".md", text="first title", prefix="test [1] ") as file1:
+            with closed_tempfile(
+                ".md", text="second title", prefix="test [2] "
+            ) as file2:
+                expected = "<p>first title</p>\n<p>second title</p>"
+                received = pypandoc.convert_file([Path(file1), Path(file2)], "html")
+                self.assertEqualExceptForNewlineEnd(expected, received)
+
     def assertEqualExceptForNewlineEnd(self, expected, received):  # noqa
         # output written to a file does not seem to have os.linesep
         # handle everything here by replacing the os linesep by a simple \n
